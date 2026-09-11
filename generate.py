@@ -38,11 +38,33 @@ STALE_AFTER_MINUTES = 20
 RECENT_DAYS = 30
 SITE = "https://pykapp.github.io/status/"
 INCIDENTS_REPO = "https://github.com/pykapp/status"
-TITLE = "people you know — status"
+TITLE = "people you know—status"
 
 UNKNOWN_SENTENCE = "we can't currently confirm service health"
 OK_SENTENCE = "all good"
 TROUBLE_SENTENCE = "something's wrong"
+
+# The two grounds the page paints. Named, so the marks' contrast is measured
+# against what is on the screen and not against a copy of it.
+LIGHT_GROUND = "#ffffff"
+DARK_GROUND = "#111111"
+
+# A mark's colour is laid over its shape and never replaces it (§15). The green
+# and the red are the launcher icon's: `icon_quadrant_br` and `icon_quadrant_tr`
+# in androidApp/src/main/res/values/colors.xml, which test_generate.py reads so
+# the page cannot drift from the icon. Those quadrants hold one L* by
+# construction, so in greyscale, and to anybody who cannot tell red from green,
+# the two marks are one grey: the filled, barred and hollow discs say the state
+# and the colour only repeats it. Unknown has no colour and draws in the text's
+# own ink, because it must not look like either.
+#
+# The dark shades hold each hue and chroma in LCh and raise L* from 40 to 62.
+# The icon's own shades give the dark ground 2.9:1, under WCAG's 3:1 for a
+# graphic; at 62 each gives it the 6.4:1 the light shade gives white.
+MARK_COLOURS = {
+    "ok": {"light": "#40690E", "dark": "#7AA349"},
+    "trouble": {"light": "#A43C31", "dark": "#E77665"},
+}
 
 
 # ── inputs ────────────────────────────────────────────────────────────────────
@@ -136,14 +158,22 @@ def when(moment: dt.datetime | None) -> str:
 
 
 def mark(state: str) -> str:
-    """The state as inline SVG: a filled disc for good, a hollow one for unknown, a barred one for trouble."""
+    """The state as inline SVG: a filled disc for good, a hollow one for unknown, a barred one for trouble.
+
+    The shape is the state and the class only colours it (MARK_COLOURS); `unknown` has no colour rule.
+    """
     if state == "ok":
-        return '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="currentColor"/></svg>'
+        return '<svg class="mark ok" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="currentColor"/></svg>'
     if state == "trouble":
-        return ('<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">'
+        return ('<svg class="mark trouble" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">'
                 '<circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/>'
                 '<line x1="3" y1="11" x2="11" y2="3" stroke="currentColor" stroke-width="1.5"/></svg>')
-    return '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>'
+    return '<svg class="mark unknown" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>'
+
+
+def mark_rules(scheme: str) -> str:
+    """The coloured marks' CSS for one colour scheme. Unknown has no rule, so it keeps the text's colour."""
+    return " ".join(f".mark.{state} {{ color: {shades[scheme]}; }}" for state, shades in MARK_COLOURS.items())
 
 
 def text(value: str) -> str:
@@ -164,10 +194,14 @@ def render_html(state: str, heartbeat: dt.datetime | None, probes: list[dict] | 
     recent.sort(key=lambda i: i["closed"], reverse=True)
 
     probe_rows = ""
+    window = dt.timedelta(minutes=STALE_AFTER_MINUTES)
     for p in (probes or []):
+        # A row checked longer ago than the window says unknown, as the headline does.
+        fresh = p["checked"] is not None and now - p["checked"] <= window
+        shown = ("ok" if p["state"] == "up" else "trouble" if p["state"] == "down" else "unknown") if fresh else "unknown"
         probe_rows += (
-            f'<li>{mark("ok" if p["state"] == "up" else "trouble" if p["state"] == "down" else "unknown")} '
-            f'{text(p["name"])} — {text(p["state"])}, checked {when(p["checked"])}'
+            f'<li>{mark(shown)} '
+            f'{text(p["name"])}—{text(p["state"])}, checked {when(p["checked"])}'
             + (f' from {text(", ".join(str(r) for r in p["regions"]))}' if p["regions"] else "")
             + "</li>"
         )
@@ -182,6 +216,7 @@ def render_html(state: str, heartbeat: dt.datetime | None, probes: list[dict] | 
     current_html = "".join(incident_block(i) for i in current) or "<p>nothing is being worked on right now</p>"
     recent_html = "".join(incident_block(i) for i in recent) or f"<p>nothing in the last {RECENT_DAYS} days</p>"
 
+    light_marks, dark_marks = mark_rules("light"), mark_rules("dark")
     as_of = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     return f"""<!doctype html>
 <html lang="en">
@@ -193,8 +228,9 @@ def render_html(state: str, heartbeat: dt.datetime | None, probes: list[dict] | 
 <link rel="alternate" type="application/atom+xml" title="incidents" href="feed.xml">
 <style>
   /* No external anything: this file is the whole page (DESIGN.md §15). */
-  body {{ margin: 0; padding: 2rem 1.25rem; max-width: 40rem; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #111; background: #fff; }}
-  @media (prefers-color-scheme: dark) {{ body {{ color: #eee; background: #111; }} }}
+  body {{ margin: 0; padding: 2rem 1.25rem; max-width: 40rem; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #111; background: {LIGHT_GROUND}; }}
+  {light_marks}
+  @media (prefers-color-scheme: dark) {{ body {{ color: #eee; background: {DARK_GROUND}; }} {dark_marks} }}
   h1 {{ font-size: 1.1rem; font-weight: 600; margin: 0 0 1.5rem; }}
   h2 {{ font-size: 1rem; font-weight: 600; margin: 2rem 0 .5rem; }}
   h3 {{ font-size: 1rem; font-weight: 600; margin: 1rem 0 .25rem; }}
@@ -207,7 +243,7 @@ def render_html(state: str, heartbeat: dt.datetime | None, probes: list[dict] | 
 </style>
 </head>
 <body>
-<h1>people you know — status</h1>
+<h1>people you know—status</h1>
 
 <div id="status" data-as-of="{as_of}" data-stale-after-minutes="{STALE_AFTER_MINUTES}" data-state="{state}">
   <p id="state">{mark(state)} <span id="sentence">{text(SENTENCES[state])}</span></p>
@@ -231,14 +267,15 @@ def render_html(state: str, heartbeat: dt.datetime | None, probes: list[dict] | 
 <script>
 /* The deadman's switch, viewer's side. No network: only this page's own
    `as of` against the viewer's clock. If the renderer stopped, the page is
-   what stops saying green. */
+   what stops saying green, in the headline and on every row. */
 (function () {{
   var box = document.getElementById("status");
   var asOf = Date.parse(box.getAttribute("data-as-of"));
   var window = Number(box.getAttribute("data-stale-after-minutes")) * 60 * 1000;
   if (isNaN(asOf) || Date.now() - asOf > window) {{
     document.getElementById("sentence").textContent = {json.dumps(UNKNOWN_SENTENCE)};
-    document.getElementById("state").firstElementChild.outerHTML = {json.dumps(mark("unknown"))};
+    var marks = document.querySelectorAll("svg.mark");
+    for (var i = 0; i < marks.length; i++) {{ marks[i].outerHTML = {json.dumps(mark("unknown"))}; }}
     box.setAttribute("data-state", "unknown");
   }}
 }})();
