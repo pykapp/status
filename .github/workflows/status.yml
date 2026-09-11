@@ -1,0 +1,73 @@
+# The status page's own workflow, in the pykapp/status repository (DESIGN.md §15).
+#
+# Copied there from status/workflow.yml in jsbg/peopleyouknow by that repository's
+# publish workflow; this file is the source and that copy is the one that runs.
+#
+# Every ten minutes, and whenever an incident is opened, edited or closed: ask
+# the prober what it last saw, read the incidents, render, and deploy the
+# result as a Pages artifact. No commit per render—the repository holds the
+# generator and the incidents, and the page is the artifact.
+#
+# What it must not do: reach the app's API, the media store, or anything of
+# ours. The prober is Better Stack (a third party, from four regions), the
+# host is GitHub Pages, and the credential is that prober's read token, which
+# is a secret of this repository and nothing else's. If the prober cannot be
+# reached the page says so rather than green: `generate.py` treats a missing
+# probes.json as unknown.
+name: Render the status page
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  issues:
+    types: [opened, edited, closed, reopened, labeled, unlabeled, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: status
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ask the prober what it last saw
+        env:
+          BETTERSTACK_TOKEN: ${{ secrets.BETTERSTACK_TOKEN }}
+        run: |
+          # A team-scoped Uptime API token for the Better Stack team that holds
+          # the three monitors (there is no read-only scope; the team holds
+          # nothing else). A failed call leaves no file, and no file renders
+          # as unknown; it never renders as green.
+          curl -fsS --max-time 20 \
+            -H "Authorization: Bearer $BETTERSTACK_TOKEN" \
+            "https://uptime.betterstack.com/api/v2/monitors" -o probes.json \
+            || { echo "the prober could not be reached; rendering unknown"; rm -f probes.json; }
+
+      - name: Read the incidents
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/issues?state=all&labels=incident&per_page=50" > incidents.json \
+            || echo '[]' > incidents.json
+
+      - name: Render
+        run: python3 generate.py --probes probes.json --incidents incidents.json --out site
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v5
