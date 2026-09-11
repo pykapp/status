@@ -1,4 +1,5 @@
 # The status page's own workflow, in the pykapp/status repository (DESIGN.md §15).
+
 #
 # Copied there from status/workflow.yml in jsbg/peopleyouknow by that repository's
 # publish workflow; this file is the source and that copy is the one that runs.
