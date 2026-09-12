@@ -18,10 +18,10 @@ name: Render the status page
 
 on:
   schedule:
-    - cron: '8,18,28,38,48,58 * * * *'
+    - cron: '*/10 * * * *'
   issues:
     types: [opened, edited, closed, reopened, labeled, unlabeled, deleted]
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 permissions:
   contents: read

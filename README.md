@@ -36,9 +36,13 @@ you are reading publishes these three files into that one on every merge to
    - `/health` — expect 200
    - `/ready` — expect 200
    - `/probe/blob` — *follow redirects*, expect 200, keyword `pyk-canary`
-   The third is the honest one: the API signs a URL for a canary object and
+   The third is the honest one, and since M13 it is also the only one that
+   says anything about storage: the API signs a URL for a canary object and
    the prober fetches it from storage, over the public endpoint, the way a
-   phone fetches a photo. Name them so the page reads well; the page prints
+   phone fetches a photo. `/ready` is what the load balancer reads, so it
+   answers about the API and not about the bucket—a green `/ready` beside a
+   red `/probe/blob` is photographs failing while everything else works, which
+   is a true thing for a status page to be able to say. Name them so the page reads well; the page prints
    the names.
 4. **The token.** Better Stack → API tokens → *Team-based tokens*: an Uptime
    API token for the team that holds the three monitors. Better Stack has no
