@@ -8,6 +8,15 @@
 # result as a Pages artifact. No commit per render—the repository holds the
 # generator and the incidents, and the page is the artifact.
 #
+# The ten minutes are `tick.yml`'s and not the cron below's. GitHub's scheduler
+# delivered about seven of the hundred and forty-four firings a day that
+# `*/10` asks for, at arbitrary minutes and gaps of up to six hours, which left
+# this page reading `we can't currently confirm service health` for most of the
+# day; tick.yml's header records the measurement and the argument. This workflow
+# did not otherwise change—it still renders once per dispatch—and it keeps a
+# schedule of its own as a backstop, on an odd minute because the start of an
+# hour is the documented worst time to ask for one.
+#
 # What it must not do: reach the app's API, the media store, or anything of
 # ours. The prober is Better Stack (a third party, from four regions), the
 # host is GitHub Pages, and the credential is that prober's read token, which
@@ -18,7 +27,7 @@ name: Render the status page
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '23 * * * *'
   issues:
     types: [opened, edited, closed, reopened, labeled, unlabeled, deleted]
   workflow_dispatch:

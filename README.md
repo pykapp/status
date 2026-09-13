@@ -14,11 +14,23 @@ page is text and inline SVG, loads nothing from anywhere, and defaults to
 heard from in twenty minutes. `test_generate.py` reads the rendered bytes and
 holds all of that; CI runs it on every push.
 
-`workflow.yml` is the GitHub Actions workflow the **status repository** runs
-every ten minutes and on every incident: it asks the prober, reads the
-incidents, renders, and deploys the result to GitHub Pages. The repository
-you are reading publishes these three files into that one on every merge to
-`main` that touches `status/` (`.github/workflows/status-page.yml`).
+`workflow.yml` is the GitHub Actions workflow the **status repository** runs on
+every dispatch and on every incident: it asks the prober, reads the
+incidents, renders, and deploys the result to GitHub Pages.
+
+`tick.yml` is what gives it its ten minutes. GitHub's `schedule` does not
+deliver a ten-minute cron—measured here it produced about seven runs a day at
+arbitrary minutes, with gaps up to six hours, which left the page reading *we
+can't currently confirm service health* for most of the day—so the ticker
+dispatches the renderer every ten minutes for five hours and then dispatches
+its own successor. The chain is the clock; the cron in each file is only there
+to restart a chain that died. This needs nothing from you: `GITHUB_TOKEN` may
+start a `workflow_dispatch`, so there is no extra token, account or provider,
+and nothing new in the table below. §15 argues it and records the alternative
+(an external cron calling the same endpoint) that was not taken.
+
+The repository you are reading publishes these four files into that one on
+every merge to `main` that touches `status/` (`.github/workflows/status-page.yml`).
 
 ## Once, by hand
 
@@ -61,7 +73,13 @@ you are reading publishes these three files into that one on every merge to
    alerts in `ops/alerts.yml` are the page for everything the prober cannot
    see from outside.
 
-After the first publish, open `https://pykapp.github.io/status/`: it should
+After the first publish, start the clock once: *Actions → Keep the status page
+fresh → Run workflow*. It dispatches a render immediately and hands over to its
+own successor five hours later, so that is the only time anybody has to press
+it—if the page ever goes stale and stays stale, pressing it again is the whole
+of the repair.
+
+Then open `https://pykapp.github.io/status/`: it should
 say *all good* with three probes listed. Then pause one monitor in Better
 Stack and wait for the next render: *we can't currently confirm service
 health*. Resume it: *all good*. That is the deadman's switch, watched once.
@@ -74,7 +92,7 @@ whenever any host changes.
 | The page touches | Provider | Shared with the API? | With R2? | With a domain of ours? |
 |---|---|---|---|---|
 | `pykapp.github.io/status/` (the bytes) | GitHub Pages, fronted by Fastly | no—the API is a container on a host that is not GitHub, Fastly or Azure | no—R2 is Cloudflare | there is no domain of ours; `github.io` is GitHub's zone (Route 53 and NS1) |
-| The render job | GitHub Actions | no runtime dependency; the API runs whether or not Actions does | no | no |
+| The render job and the ticker that paces it | GitHub Actions | no runtime dependency; the API runs whether or not Actions does | no | no |
 | The prober | Better Stack Uptime | reaches the API from outside, holds no credential of the API's | reaches R2 the way a phone does, with a URL the API signed | no |
 | The incidents and their e-mail | GitHub Issues and its notifications | no | no | no |
 | The `pykapp` account | GitHub, free plan | it also holds the policy pages; it holds nothing the API needs to run | no | no |

@@ -1,0 +1,102 @@
+# The status page's ticker, in the pykapp/status repository (DESIGN.md §15).
+#
+# Copied there from status/tick.yml in jsbg/peopleyouknow by that repository's
+# publish workflow; this file is the source and that copy is the one that runs.
+#
+# Why this exists: GitHub's `schedule` does not deliver a ten-minute cron, and
+# §15 had budgeted for it being late rather than absent. Measured over two days
+# on this repository, `*/10` produced about seven runs a day at arbitrary
+# minutes, with gaps from 1h41m to 5h56m; `created` equalled `started` on every
+# one and each took under half a minute, so nothing was queued and no runner was
+# missing—GitHub had simply not created the run. That is documented behaviour: a
+# scheduled run is skipped entirely under load, with no run, no error and no
+# notification, and `*/10` means eligible every ten minutes rather than every ten
+# minutes. It is not this repository being idle either, which is the other known
+# cause: it was five days old, public and pushed the day before.
+#
+# What that cost is the whole point of the page. `generate.py` renders a page
+# carrying its own `as of`, and the inline script swaps in the unknown sentence
+# when the viewer's clock finds it older than STALE_AFTER_MINUTES—so a render
+# every few hours is a page that reads `we can't currently confirm service
+# health` for roughly ninety per cent of the day, including the moment the app's
+# `check status ->` sends somebody to it. The page was not lying; it was telling
+# the truth about a renderer that had stopped running.
+#
+# So the cadence comes from here and not from GitHub's scheduler: this job
+# dispatches the renderer every ten minutes for five hours, then dispatches its
+# own successor. The chain is the clock and the cron below is only a restarter.
+# `GITHUB_TOKEN` may do this—`workflow_dispatch` and `repository_dispatch` are
+# the two exceptions to the rule that a token-triggered event creates no run,
+# which is why this needs no personal access token, no new account and no new
+# provider, and why nothing joins the independence table in status/README.md.
+#
+# What it costs, said plainly: one free runner is occupied more or less
+# continuously to do half a minute of work every ten minutes. Public repositories
+# have no minute limit, and rendering this repository's own page is what this
+# repository is for, but a runner that mostly sleeps is a conspicuous shape and
+# the honest reason it is acceptable here is that the alternative was a third
+# party holding a token of ours. If GitHub ever objects, the replacement is an
+# external cron calling the same dispatch endpoint; §15 records that as the fork
+# that was not taken.
+#
+# Failure is safe rather than silent. If the chain breaks the page stops being
+# re-rendered, and a page that is not re-rendered goes unknown rather than green:
+# the deadman's switch §15 argues for catches exactly this. The cron restarts a
+# dead chain whenever GitHub gets round to it.
+name: Keep the status page fresh
+
+on:
+  # Not the cadence—the restarter. Whatever GitHub delivers of this is enough to
+  # revive a chain that died, and the minutes are odd ones because the start of
+  # an hour is the documented worst time to ask.
+  schedule:
+    - cron: '13,43 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+# One ticker at a time. A cron firing while a chain is running pends behind it
+# rather than doubling the cadence, and a third is cancelled, so the arrangement
+# cannot multiply itself.
+concurrency:
+  group: status-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Render every ten minutes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Thirty ticks of ten minutes is five hours, comfortably inside the
+          # six-hour limit a job is killed at—the successor is dispatched by the
+          # step below and a job that is killed dispatches nothing.
+          for i in $(seq 1 30); do
+            for attempt in 1 2 3; do
+              if gh workflow run status.yml --repo "$GITHUB_REPOSITORY"; then
+                break
+              fi
+              echo "tick $i: could not dispatch the renderer (attempt $attempt)"
+              sleep 10
+            done
+            sleep 600
+          done
+
+      - name: Hand the clock to the next ticker
+        # always(), because a chain that stops because one dispatch failed is a
+        # page that goes unknown until the cron notices.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in 1 2 3; do
+            if gh workflow run tick.yml --repo "$GITHUB_REPOSITORY"; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "the chain could not be continued; the schedule will restart it"
