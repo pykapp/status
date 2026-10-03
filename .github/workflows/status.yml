@@ -38,9 +38,14 @@ permissions:
   pages: write
   id-token: write
 
+# One render at a time, and the newest replaces any other. A render takes under
+# a minute, so the one a new render finds still in the group is one that never
+# got a runner or never finished. Waiting behind it leaves every later render
+# pending until GitHub drops the stuck job after a day, and the page reads
+# unknown for that whole day.
 concurrency:
   group: status
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   render:
