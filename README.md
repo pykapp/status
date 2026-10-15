@@ -98,7 +98,6 @@ whenever any host changes.
 | The `pykapp` account | GitHub, free plan | it also holds the policy pages; it holds nothing the API needs to run | no | no |
 | The operator's sign-in | GitHub's | not our identity provider; there is none | — | — |
 
-The one constraint this places on the host that is not yet chosen
-(`prod-infra-setup`): **the API may not run on Azure, GitHub or Fastly**, and
-it already may not run on Cloudflare. Fly, Render on AWS or GCP, or a VPS all
-qualify.
+The one constraint this places on the host: **the API may not run on Azure,
+GitHub or Fastly**, and it already may not run on Cloudflare. It runs on AWS
+(`infra/`).
